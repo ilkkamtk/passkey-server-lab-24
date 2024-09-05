@@ -1,0 +1,138 @@
+// TODO: add imports
+import {NextFunction, Request, Response} from 'express';
+import CustomError from '../../classes/CustomError';
+import {User} from '@sharedTypes/DBTypes';
+import {PublicKeyCredentialCreationOptionsJSON} from '@simplewebauthn/types';
+import fetchData from '../../utils/fetchData';
+import {UserResponse} from '@sharedTypes/MessageTypes';
+import {generateRegistrationOptions} from '@simplewebauthn/server';
+import {Challenge} from '../../types/PasskeyTypes';
+import challengeModel from '../models/challengeModel';
+import passkeyUserModel from '../models/passkeyUserModel';
+
+// check environment variables
+if (
+  !process.env.NODE_ENV ||
+  !process.env.RP_ID ||
+  !process.env.AUTH_URL ||
+  !process.env.JWT_SECRET ||
+  !process.env.RP_NAME
+) {
+  throw new Error('Environment variables not set');
+}
+
+const {NODE_ENV, RP_ID, AUTH_URL, JWT_SECRET, RP_NAME} = process.env;
+
+// Registration handler
+const setupPasskey = async (
+  req: Request<{}, {}, User>,
+  res: Response<{
+    email: string;
+    options: PublicKeyCredentialCreationOptionsJSON;
+  }>,
+  next: NextFunction,
+) => {
+  try {
+    // Register user with AUTH API
+    const options: RequestInit = {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(req.body),
+    };
+    const userResponse = await fetchData<UserResponse>(
+      process.env.AUTH_URL + '/api/v1/users',
+      options,
+    );
+
+    if (!userResponse) {
+      next(new CustomError('User not created', 400));
+      return;
+    }
+
+    // TODO: Generate registration options
+    const regOptions = await generateRegistrationOptions({
+      rpName: RP_NAME,
+      rpID: RP_ID,
+      userName: userResponse.user.username,
+      attestationType: 'none',
+      timeout: 60000,
+      authenticatorSelection: {
+        residentKey: 'discouraged',
+        userVerification: 'preferred',
+      },
+      supportedAlgorithmIDs: [-7, -257],
+    });
+
+    // TODO: Save challenge to DB
+    const challenge: Challenge = {
+      email: userResponse.user.email,
+      challenge: regOptions.challenge,
+    };
+
+    await new challengeModel(challenge).save();
+
+    // TODO: Add user to PasskeyUser collection
+    await new passkeyUserModel({
+      email: userResponse.user.email,
+      userId: userResponse.user.user_id,
+      devices: [],
+    }).save();
+
+    // TODO: Send response with email and options
+    res.json({
+      email: userResponse.user.email,
+      options: regOptions,
+    });
+  } catch (error) {
+    next(new CustomError((error as Error).message, 500));
+  }
+};
+
+// Registration verification handler
+const verifyPasskey = async (req, res, next) => {
+  try {
+    // TODO: Retrieve expected challenge from DB
+    // TODO: Verify registration response
+    // TODO: Check if device is already registered
+    // TODO: Save new authenticator to AuthenticatorDevice collection
+    // TODO: Update user devices array in DB
+    // TODO: Clear challenge from DB after successful registration
+    // TODO: Retrieve and send user details from AUTH API
+  } catch (error) {
+    next(new CustomError((error as Error).message, 500));
+  }
+};
+
+// Generate authentication options handler
+const authenticationOptions = async (req, res, next) => {
+  try {
+    // TODO: Retrieve user and associated devices from DB
+    // TODO: Generate authentication options
+    // TODO: Save challenge to DB
+    // TODO: Send options in response
+  } catch (error) {
+    next(new CustomError((error as Error).message, 500));
+  }
+};
+
+// Authentication verification and login handler
+const verifyAuthentication = async (req, res, next) => {
+  try {
+    // TODO: Retrieve expected challenge from DB
+    // TODO: Verify authentication response
+    // TODO: Update authenticator's counter
+    // TODO: Clear challenge from DB after successful authentication
+    // TODO: Generate and send JWT token
+  } catch (error) {
+    next(new CustomError((error as Error).message, 500));
+  }
+};
+
+export {
+  setupPasskey,
+  verifyPasskey,
+  authenticationOptions,
+  verifyAuthentication,
+};
