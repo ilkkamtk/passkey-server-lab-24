@@ -10,11 +10,13 @@ import fetchData from '../../utils/fetchData';
 import {UserResponse} from '@sharedTypes/MessageTypes';
 import {
   generateRegistrationOptions,
+  verifyRegistrationResponse,
   VerifyRegistrationResponseOpts,
 } from '@simplewebauthn/server';
 import {Challenge} from '../../types/PasskeyTypes';
 import challengeModel from '../models/challengeModel';
 import passkeyUserModel from '../models/passkeyUserModel';
+import authenticatorDeviceModel from '../models/authenticatorDeviceModel';
 
 // check environment variables
 if (
@@ -30,7 +32,7 @@ if (
 const {
   NODE_ENV,
   RP_ID,
-  // AUTH_URL,
+  AUTH_URL,
   // JWT_SECRET,
   RP_NAME,
 } = process.env;
@@ -134,11 +136,56 @@ const verifyPasskey = async (
       expectedRPID: RP_ID,
     };
 
+    console.log('opts', opts);
+    const verification = await verifyRegistrationResponse(opts);
+    console.log('verification', verification);
+
+    const {verified, registrationInfo} = verification;
+
+    if (!verified || !registrationInfo) {
+      next(new CustomError('Verification failed', 403));
+      return;
+    }
+
+    const {credentialPublicKey, credentialID, counter} = registrationInfo;
     // TODO: Check if device is already registered
+    const existingDevice = await authenticatorDeviceModel.findOne({
+      credentialID,
+    });
+
+    if (existingDevice) {
+      next(new CustomError('Device already registered', 400));
+      return;
+    }
+
     // TODO: Save new authenticator to AuthenticatorDevice collection
+    const newDevice = new authenticatorDeviceModel({
+      email: req.body.email,
+      credentialPublicKey: Buffer.from(credentialPublicKey),
+      credentialID,
+      counter,
+      transports: req.body.registrationOptions.response.transports,
+    });
+
+    const newDeviceResult = await newDevice.save();
+
     // TODO: Update user devices array in DB
+    const user = await passkeyUserModel.findOne({email: req.body.email});
+    if (!user) {
+      next(new CustomError('User not found', 404));
+      return;
+    }
+    user.devices.push(newDeviceResult._id);
+    await user.save();
+
     // TODO: Clear challenge from DB after successful registration
+    await challengeModel.findOneAndDelete({email: req.body.email});
     // TODO: Retrieve and send user details from AUTH API
+    // If valid, get the user from AUTH API
+    const respose = await fetchData<UserResponse>(
+      AUTH_URL + '/api/v1/users/' + user.userId,
+    );
+    res.json(respose);
   } catch (error) {
     next(new CustomError((error as Error).message, 500));
   }
