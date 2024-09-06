@@ -21,7 +21,13 @@ if (
   throw new Error('Environment variables not set');
 }
 
-const {NODE_ENV, RP_ID, AUTH_URL, JWT_SECRET, RP_NAME} = process.env;
+const {
+  // NODE_ENV,
+  RP_ID,
+  // AUTH_URL,
+  // JWT_SECRET,
+  RP_NAME,
+} = process.env;
 
 // Registration handler
 const setupPasskey = async (
@@ -90,6 +96,7 @@ const setupPasskey = async (
   }
 };
 
+/*
 // Registration verification handler
 const verifyPasskey = async (req, res, next) => {
   try {
@@ -129,10 +136,11 @@ const verifyAuthentication = async (req, res, next) => {
     next(new CustomError((error as Error).message, 500));
   }
 };
+*/
 
 export {
   setupPasskey,
-  verifyPasskey,
-  authenticationOptions,
-  verifyAuthentication,
+  // verifyPasskey,
+  // authenticationOptions,
+  // verifyAuthentication,
 };
