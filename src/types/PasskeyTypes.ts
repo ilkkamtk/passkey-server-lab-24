@@ -16,6 +16,7 @@ type PasskeyUserGet = {
 };
 
 type AuthDevice = AuthenticatorDevice & {
+  _id: Types.ObjectId;
   email: string;
 };
 

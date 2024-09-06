@@ -3,17 +3,23 @@ import {NextFunction, Request, Response} from 'express';
 import CustomError from '../../classes/CustomError';
 import {User} from '@sharedTypes/DBTypes';
 import {
+  AuthenticationResponseJSON,
   PublicKeyCredentialCreationOptionsJSON,
+  PublicKeyCredentialRequestOptionsJSON,
   RegistrationResponseJSON,
 } from '@simplewebauthn/types';
 import fetchData from '../../utils/fetchData';
 import {UserResponse} from '@sharedTypes/MessageTypes';
 import {
+  generateAuthenticationOptions,
+  GenerateAuthenticationOptionsOpts,
   generateRegistrationOptions,
+  verifyAuthenticationResponse,
+  VerifyAuthenticationResponseOpts,
   verifyRegistrationResponse,
   VerifyRegistrationResponseOpts,
 } from '@simplewebauthn/server';
-import {Challenge} from '../../types/PasskeyTypes';
+import {Challenge, PasskeyUserGet} from '../../types/PasskeyTypes';
 import challengeModel from '../models/challengeModel';
 import passkeyUserModel from '../models/passkeyUserModel';
 import authenticatorDeviceModel from '../models/authenticatorDeviceModel';
@@ -191,36 +197,119 @@ const verifyPasskey = async (
   }
 };
 
-/*
 // Generate authentication options handler
-const authenticationOptions = async (req, res, next) => {
+const authenticationOptions = async (
+  req: Request<{}, {}, {email: string}>,
+  res: Response<PublicKeyCredentialRequestOptionsJSON>,
+  next: NextFunction,
+) => {
   try {
-    // TODO: Retrieve user and associated devices from DB
-    // TODO: Generate authentication options
-    // TODO: Save challenge to DB
+    // Retrieve user and associated devices from DB
+    const user = (await passkeyUserModel
+      .findOne({
+        email: req.body.email,
+      })
+      .populate('devices')) as unknown as PasskeyUserGet;
+
+    if (!user) {
+      next(new CustomError('User not found', 404));
+      return;
+    }
+    // Generate authentication options
+    const opts: GenerateAuthenticationOptionsOpts = {
+      timeout: 60000,
+      rpID: RP_ID,
+      allowCredentials: user.devices.map((device) => ({
+        id: device.credentialID,
+        type: 'public-key',
+        transports: device.transports,
+      })),
+      userVerification: 'preferred',
+    };
+
+    const authOptions = await generateAuthenticationOptions(opts);
+
+    // Save challenge to DB
+    await new challengeModel({
+      email: req.body.email,
+      challenge: authOptions.challenge,
+    }).save();
+
     // TODO: Send options in response
+    res.send(authOptions);
   } catch (error) {
     next(new CustomError((error as Error).message, 500));
   }
 };
 
 // Authentication verification and login handler
-const verifyAuthentication = async (req, res, next) => {
+const verifyAuthentication = async (
+  req: Request<
+    {},
+    {},
+    {email: string; authResponse: AuthenticationResponseJSON}
+  >,
+  res: Response,
+  next: NextFunction,
+) => {
   try {
-    // TODO: Retrieve expected challenge from DB
-    // TODO: Verify authentication response
-    // TODO: Update authenticator's counter
+    const {email, authResponse} = req.body;
+    // Retrieve expected challenge from DB
+    const expectedChallenge = await challengeModel.findOne({
+      email: email,
+    });
+
+    if (!expectedChallenge) {
+      next(new CustomError('Challenge not found', 404));
+      return;
+    }
+    // Retrieve user and associated devices from DB
+    const user = (await passkeyUserModel
+      .findOne({email})
+      .populate('devices')) as unknown as PasskeyUserGet;
+
+    if (!user) {
+      next(new CustomError('User not found', 404));
+      return;
+    }
+    // Verify authentication response
+    const opts: VerifyAuthenticationResponseOpts = {
+      response: authResponse,
+      expectedChallenge: expectedChallenge.challenge,
+      expectedOrigin:
+        NODE_ENV === 'development'
+          ? `http://${RP_ID}:5173`
+          : `https://${RP_ID}`,
+      authenticator: {
+        credentialPublicKey: Buffer.from(user.devices[0].credentialPublicKey),
+        credentialID: user.devices[0].credentialID,
+        counter: user.devices[0].counter,
+      },
+      requireUserVerification: false,
+    };
+
+    const verification = await verifyAuthenticationResponse(opts);
+
+    const {verified, authenticationInfo} = verification;
+
+    // Update authenticator's counter to prevent replay attacks
+    if (!verified) {
+      await authenticatorDeviceModel.findByIdAndUpdate(user.devices[0]._id, {
+        counter: authenticationInfo.newCounter,
+      });
+    }
+
     // TODO: Clear challenge from DB after successful authentication
+    await challengeModel.findOneAndDelete({email});
     // TODO: Generate and send JWT token
   } catch (error) {
     next(new CustomError((error as Error).message, 500));
   }
 };
-*/
 
 export {
   setupPasskey,
   verifyPasskey,
-  // authenticationOptions,
-  // verifyAuthentication,
+  authenticationOptions,
+  verifyAuthentication,
 };
