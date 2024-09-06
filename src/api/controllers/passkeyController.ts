@@ -2,10 +2,16 @@
 import {NextFunction, Request, Response} from 'express';
 import CustomError from '../../classes/CustomError';
 import {User} from '@sharedTypes/DBTypes';
-import {PublicKeyCredentialCreationOptionsJSON} from '@simplewebauthn/types';
+import {
+  PublicKeyCredentialCreationOptionsJSON,
+  RegistrationResponseJSON,
+} from '@simplewebauthn/types';
 import fetchData from '../../utils/fetchData';
 import {UserResponse} from '@sharedTypes/MessageTypes';
-import {generateRegistrationOptions} from '@simplewebauthn/server';
+import {
+  generateRegistrationOptions,
+  VerifyRegistrationResponseOpts,
+} from '@simplewebauthn/server';
 import {Challenge} from '../../types/PasskeyTypes';
 import challengeModel from '../models/challengeModel';
 import passkeyUserModel from '../models/passkeyUserModel';
@@ -22,7 +28,7 @@ if (
 }
 
 const {
-  // NODE_ENV,
+  NODE_ENV,
   RP_ID,
   // AUTH_URL,
   // JWT_SECRET,
@@ -96,12 +102,38 @@ const setupPasskey = async (
   }
 };
 
-/*
 // Registration verification handler
-const verifyPasskey = async (req, res, next) => {
+const verifyPasskey = async (
+  req: Request<
+    {},
+    {},
+    {email: string; registrationOptions: RegistrationResponseJSON}
+  >,
+  res: Response<UserResponse>,
+  next: NextFunction,
+) => {
   try {
-    // TODO: Retrieve expected challenge from DB
-    // TODO: Verify registration response
+    // Retrieve expected challenge from DB
+    const expectedChallenge = await challengeModel.findOne({
+      email: req.body.email,
+    });
+
+    if (!expectedChallenge) {
+      next(new CustomError('Challenge not found', 404));
+      return;
+    }
+
+    // Verify registration response
+    const opts: VerifyRegistrationResponseOpts = {
+      response: req.body.registrationOptions,
+      expectedChallenge: expectedChallenge.challenge,
+      expectedOrigin:
+        NODE_ENV === 'development'
+          ? `http://${RP_ID}:5173`
+          : `https://${RP_ID}`,
+      expectedRPID: RP_ID,
+    };
+
     // TODO: Check if device is already registered
     // TODO: Save new authenticator to AuthenticatorDevice collection
     // TODO: Update user devices array in DB
@@ -112,6 +144,7 @@ const verifyPasskey = async (req, res, next) => {
   }
 };
 
+/*
 // Generate authentication options handler
 const authenticationOptions = async (req, res, next) => {
   try {
@@ -140,7 +173,7 @@ const verifyAuthentication = async (req, res, next) => {
 
 export {
   setupPasskey,
-  // verifyPasskey,
+  verifyPasskey,
   // authenticationOptions,
   // verifyAuthentication,
 };
