@@ -1,7 +1,7 @@
 // TODO: add imports
 import {NextFunction, Request, Response} from 'express';
 import CustomError from '../../classes/CustomError';
-import {User} from '@sharedTypes/DBTypes';
+import {User, UserWithNoPassword} from '@sharedTypes/DBTypes';
 import {
   AuthenticationResponseJSON,
   PublicKeyCredentialCreationOptionsJSON,
@@ -299,7 +299,7 @@ const verifyAuthentication = async (
     await challengeModel.findOneAndDelete({email});
 
     // Generate and send JWT token
-    const userResponse = await fetchData<UserResponse>(
+    const userResponse = await fetchData<UserWithNoPassword>(
       AUTH_URL + '/api/v1/users/' + user.userId,
     );
 
@@ -307,10 +307,12 @@ const verifyAuthentication = async (
       next(new CustomError('User not found', 400));
     }
 
+    console.log(userResponse);
+
     const token = jwt.sign(
       {
-        user_id: userResponse.user.user_id,
-        level_name: userResponse.user.level_name,
+        user_id: userResponse.user_id,
+        level_name: userResponse.level_name,
       },
       JWT_SECRET,
     );
@@ -318,7 +320,7 @@ const verifyAuthentication = async (
     const message: LoginResponse = {
       message: 'Login success',
       token,
-      user: userResponse.user,
+      user: userResponse,
     };
 
     res.json(message);
